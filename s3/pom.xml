@@ -19,7 +19,7 @@ LICENSE file.
     <parent>
         <groupId>com.yahoo.ycsb</groupId>
         <artifactId>binding-parent</artifactId>
-        <version>0.14.0-30-ga6f5e64b</version>
+        <version>0.14.0-32-g39b1de4b</version>
         <relativePath>../binding-parent</relativePath>
     </parent>
   
