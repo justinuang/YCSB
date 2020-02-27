@@ -17,6 +17,7 @@
 
 package com.yahoo.ycsb;
 
+import com.google.common.util.concurrent.RateLimiter;
 import com.yahoo.ycsb.measurements.Measurements;
 import com.yahoo.ycsb.measurements.exporter.MeasurementsExporter;
 import com.yahoo.ycsb.measurements.exporter.TextMeasurementsExporter;
@@ -364,6 +365,8 @@ class ClientThread implements Runnable {
   private final CountDownLatch completeLatch;
 
   private static boolean spinSleep;
+  private final RateLimiter rateLimiter;
+  private final boolean guavaRateLimiter;
   private DB db;
   private boolean dotransactions;
   private Workload workload;
@@ -389,12 +392,15 @@ class ClientThread implements Runnable {
    * @param targetperthreadperms target number of operations per thread per ms
    * @param completeLatch        The latch tracking the completion of all clients.
    */
+  //CHECKSTYLE:OFF
+  @SuppressWarnings("checkstyle:ParameterNumber")
   public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, int opcount,
-                      double targetperthreadperms, CountDownLatch completeLatch) {
+                      double targetperthreadperms, CountDownLatch completeLatch, RateLimiter rateLimiter) {
     this.db = db;
     this.dotransactions = dotransactions;
     this.workload = workload;
     this.opcount = opcount;
+    this.rateLimiter = rateLimiter;
     opsdone = 0;
     if (targetperthreadperms > 0) {
       targetOpsPerMs = targetperthreadperms;
@@ -403,8 +409,10 @@ class ClientThread implements Runnable {
     this.props = props;
     measurements = Measurements.getMeasurements();
     spinSleep = Boolean.valueOf(this.props.getProperty("spin.sleep", "false"));
+    guavaRateLimiter = Boolean.valueOf(this.props.getProperty("guavaratelimiter", "false"));
     this.completeLatch = completeLatch;
   }
+  //CHECKSTYLE:ON
 
   public void setThreadId(final int threadId) {
     threadid = threadId;
@@ -458,7 +466,11 @@ class ClientThread implements Runnable {
 
           opsdone++;
 
-          throttleNanos(startTimeNanos);
+          if (guavaRateLimiter) {
+            rateLimiter.acquire();
+          } else {
+            throttleNanos(startTimeNanos);
+          };
         }
       } else {
         long startTimeNanos = System.nanoTime();
@@ -471,7 +483,11 @@ class ClientThread implements Runnable {
 
           opsdone++;
 
-          throttleNanos(startTimeNanos);
+          if (guavaRateLimiter) {
+            rateLimiter.acquire();
+          } else {
+            throttleNanos(startTimeNanos);
+          };
         }
       }
     } catch (Exception e) {
@@ -576,6 +592,9 @@ public final class Client {
    * Target number of operations per second.
    */
   public static final String TARGET_PROPERTY = "target";
+
+  /**
+   * Target number of operations per second.
 
   /**
    * The maximum amount of time (in seconds) for which the benchmark will be run.
@@ -867,7 +886,26 @@ public final class Client {
         }
       }
 
+      int target = Integer.parseInt(props.getProperty(TARGET_PROPERTY, "0"));
+      int warmupPeriod = Integer.parseInt(props.getProperty("warmupperiod", "0"));
+      boolean enableWarmup = Boolean.valueOf(props.getProperty("enablewarmup", "false"));
+      System.out.println("Enabling warmup: " + enableWarmup);
+      System.out.println("Using warmup period: " + warmupPeriod);
+      RateLimiter globalRateLimiter;
+      if (enableWarmup) {
+        globalRateLimiter = RateLimiter.create(target, warmupPeriod, TimeUnit.MINUTES);
+      } else {
+        globalRateLimiter = RateLimiter.create(target);
+      }
+
       for (int threadid = 0; threadid < threadcount; threadid++) {
+        RateLimiter threadRateLimiter;
+        if (enableWarmup) {
+          threadRateLimiter = RateLimiter.create(target / threadcount, warmupPeriod, TimeUnit.MINUTES);
+        } else {
+          threadRateLimiter = RateLimiter.create(target / threadcount);
+        }
+
         DB db;
         try {
           db = DBFactory.newDB(dbname, props, tracer);
@@ -884,8 +922,12 @@ public final class Client {
           ++threadopcount;
         }
 
+        boolean useThreadSpecificRateLimiter = Boolean.valueOf(props.getProperty("usethreadspecificratelimiter", "false"));
+
+        RateLimiter rateLimiter = useThreadSpecificRateLimiter ? threadRateLimiter : globalRateLimiter;
+
         ClientThread t = new ClientThread(db, dotransactions, workload, props, threadopcount, targetperthreadperms,
-            completeLatch);
+            completeLatch, rateLimiter);
         t.setThreadId(threadid);
         t.setThreadCount(threadcount);
         clients.add(t);

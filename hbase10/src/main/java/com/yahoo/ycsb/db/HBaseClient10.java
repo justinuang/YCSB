@@ -253,6 +253,7 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB {
 
     Result r = null;
     try {
+//      System.out.println("Get timestamp: " + System.currentTimeMillis());
       if (debug) {
         System.out
             .println("Doing read from HBase columnfamily " + columnFamily);
