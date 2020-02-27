@@ -21,7 +21,7 @@ LICENSE file.
   <parent>
     <groupId>com.yahoo.ycsb</groupId>
     <artifactId>root</artifactId>
-    <version>0.14.0-21-g2e2577ce</version>
+    <version>0.14.0-23-g1efa0816</version>
   </parent>
 
   <artifactId>ycsb</artifactId>
